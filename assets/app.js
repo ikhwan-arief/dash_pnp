@@ -5,7 +5,8 @@
 import { MODULES, SDGS, METRIC_KINDS, INSTITUTION, configureInstitution, languageName, csvCell, metricDrill, journalWindow, snapshotYearOf, withoutPeriod, workSdgs, citingShard, CITING_FIELDS } from './metrics.js';
 import { renderImpactMetrics, renderJournalRecap, renderJournalHeader, renderAuthorHeader, renderJournalMetrics, renderJournalCitations, renderJournalTable, METRIC_TITLES, metricYear } from './journal-panel.js';
 import { EXPORT_CONTROLS, SHOW_AUDIT_TAB, CONTENT_PROTECTION } from './config.js';
-import { el, panel, bar, line, donut, stacked, scatter, heatmap, treemap, network, dots, smallMultiples, countryBubbleMap, destroyCharts, downloadText, PALETTE, applyTheme } from './charts.js';
+import { el, panel, bar, line, donut, stacked, scatter, heatmap, treemap, network, scienceMap, dots, smallMultiples, countryBubbleMap, destroyCharts, downloadText, PALETTE, applyTheme } from './charts.js';
+import { vosviewerFiles } from './sciencemap.js';
 const $ = id => document.getElementById(id), nf = new Intl.NumberFormat('en-US'), df = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const num = n => n === null || n === undefined ? 'Not available' : nf.format(n);
 const decimal = n => n === null || n === undefined ? 'Not available' : df.format(n);
@@ -564,13 +565,32 @@ function render() {
         line(panel(grid, 'Citations by year received', 'Counts from counts_by_year; the available window is limited, not the full history.'), data.citation_years.map(([year, count]) => ({ year, count })), { label: 'Citations observed',unit:'citations' });
         scatter(panel(grid, 'Work age and citations', 'At most the 250 most cited works; age is counted from the snapshot year.'), data.scatter, { x: 'age', y: 'citations', xTitle: 'Work age (years)', onClick: r => openWork(r.id) });
         bar(panel(grid, 'Normalised impact groups', `Percentile coverage: ${num(k.eligible)} works · ${pct(k.percentile_coverage)}.`), k.eligible ? [{ id: 'top1', name: 'Top 1%', count: k.top1 }, { id: 'top10', name: 'Top 10% (includes top 1%)', count: k.top10 }] : [], { limit: 2, onClick: r => drill({ metric: r.id }) });
-        const net = panel(grid, filter.scope === 'affiliated' ? `Links between ${home()} works` : 'Links between the selected works', 'A subset of at most the 40 most cited works; links are observed references.', true);
-        const select = el('select', { 'aria-label': 'Citation network type' });
-        for (const [v, l] of [['citations', 'Direct citation'], ['coupling', 'Bibliographic coupling'], ['cocitation', 'Co-citation']])
-            option(select, v, l);
-        net.actions.append(select);
-        const draw = () => { net.body.replaceChildren(); net.node.querySelector('.chart-data')?.remove(); net.actions.querySelector('.chart-export')?.remove(); network(net, data.networks[select.value], r => openWork(r.id)); };
-        select.onchange = draw;
+        // Citation map in the manner of VOSviewer: computed in the worker for the active filter, redrawn when a control changes.
+        const net = panel(grid, filter.scope === 'affiliated' ? `Links between ${home()} works` : 'Links between the selected works',
+            'Map of the most strongly linked works: association-strength normalisation, VOS layout and modularity clusters. Links are observed references in OpenAlex.', true);
+        const controls = el('div', { class: 'map-controls' }), kind = el('select', { 'aria-label': 'Link type' }), view = el('select', { 'aria-label': 'Map view' });
+        for (const [v, l] of [['coupling', 'Bibliographic coupling'], ['direct', 'Direct citation'], ['cocitation', 'Co-citation']]) option(kind, v, l);
+        for (const [v, l] of [['network', 'Network (clusters)'], ['overlay', 'Overlay (year)'], ['density', 'Density']]) option(view, v, l);
+        const minimum = el('input', { type: 'number', min: 0, max: 500, value: 0, 'aria-label': 'Minimum citations' }), size = el('select', { 'aria-label': 'Maximum number of works' });
+        for (const v of [100, 200, 300]) option(size, String(v), `${v} works`);
+        size.value = '300';
+        const minLabel = el('label', {}, 'Min. citations'); minLabel.append(minimum);
+        controls.append(kind, view, minLabel, size);
+        net.actions.append(controls);
+        let mapRequest = 0, current = null;
+        const render = () => { net.actions.querySelectorAll('.chart-export').forEach(b => b.remove()); net.node.querySelector('.chart-data')?.remove();
+            scienceMap(net, current, { view: view.value, onClick: r => openWork(r.id), files: current.nodes.length ? vosviewerFiles(current) : null }); };
+        const draw = async () => {
+            const request = ++mapRequest;
+            net.body.replaceChildren(el('div', { class: 'empty-state' }, 'Calculating the map…'));
+            const result = await task('sciencemap', { kind: kind.value, minCitations: Number(minimum.value) || 0, maxNodes: Number(size.value) });
+            if (request !== mapRequest) return;
+            current = result; render();
+            const s = result.stats;
+            if (result.nodes.length) net.body.append(el('p', { class: 'map-note' }, `${num(s.nodes)} works and ${num(s.shown_links)} of ${num(s.total_links)} links shown (largest connected set). ${num(s.outside_largest_set)} selected works fall outside it; ${num(s.linked_works)} works in the filter have at least one link.`));
+        };
+        kind.onchange = minimum.onchange = size.onchange = draw;
+        view.onchange = () => current && render();
         draw();
         minis(content, [['Median citations', decimal(k.median_citations), 'Little affected by outliers'], ['Scope h-index', num(k.h_index), 'Only the active set of works'], ['Mean citations', decimal(data.total ? k.citations / data.total : null), 'Cumulative citations per work'], ['FWCI coverage', pct(k.fwci_coverage), 'Missing values are left out of the mean']]);
     }

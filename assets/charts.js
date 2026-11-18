@@ -426,3 +426,95 @@ export function network(p, data, onClick) {
     exportControl(p);
     accessible(p, nodes.map(n => ({ ...n, count: n.count || 0 })), onClick);
 }
+// Citation map in the manner of VOSviewer (layout and clusters from sciencemap.js). Views: network (colour = cluster),
+// overlay (colour = publication year) and density (blurred weight). Wheel or pinch zooms, dragging pans, hover shows neighbours.
+const OTHER_CLUSTER = '#B9B3AC';
+// Clusters need hues that stay apart; the first colour follows the theme, the rest are the design's semantic colours.
+const clusterColor = c => [PALETTE[0], '#3080FF', '#00C758', '#8200DA', '#EDB200', '#FB2C36', '#016630', '#1447E6', '#874B00', '#797067'][(c - 1) % 10];
+export function scienceMap(p, map, { view = 'network', onClick, files } = {}) {
+    p.body.replaceChildren();
+    if (!map.nodes.length) { empty(p, 'No links in this selection. Lower the minimum citations or choose another link type.'); return; }
+    p.body.classList.add('science-map');
+    const W = 800, H = 460, pad = 40, xs = map.nodes.map(n => n.x), ys = map.nodes.map(n => n.y);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const scale = Math.min((W - 2 * pad) / ((x1 - x0) || 1), (H - 2 * pad) / ((y1 - y0) || 1));
+    const pos = new Map(map.nodes.map(n => [n.id, [pad + (n.x - x0) * scale + ((W - 2 * pad) - (x1 - x0) * scale) / 2, pad + (n.y - y0) * scale + ((H - 2 * pad) - (y1 - y0) * scale) / 2]]));
+    // The overlay scale runs from the 5th to the 95th percentile year, so a few old works do not wash out the recent ones.
+    const years = map.nodes.map(n => n.year).filter(Boolean).sort((a, b) => a - b), [yMin, yMax] = [years[Math.floor(years.length * .05)], years[Math.ceil(years.length * .95) - 1]];
+    const yearColor = y => y ? mix('#FFE0B2', '#7C2D12', yMax > yMin ? Math.min(1, Math.max(0, (y - yMin) / (yMax - yMin))) : 1) : OTHER_CLUSTER;
+    const color = n => view === 'overlay' ? yearColor(n.year) : n.cluster ? clusterColor(n.cluster) : OTHER_CLUSTER;
+    const maxCites = Math.max(1, ...map.nodes.map(n => n.citations)), radius = n => 3 + 11 * Math.sqrt(n.citations / maxCites);
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': p.title, xmlns: NS, class: 'science-map-svg' });
+    const stage = svgEl('g'), edgeLayer = svgEl('g'), nodeLayer = svgEl('g'), labelLayer = svgEl('g', { 'pointer-events': 'none' });
+    if (view === 'density') {
+        const defs = svgEl('defs'), blur = svgEl('filter', { id: 'map-density-blur', x: '-50%', y: '-50%', width: '200%', height: '200%' });
+        blur.append(svgEl('feGaussianBlur', { stdDeviation: 14 })); defs.append(blur); svg.append(defs);
+        const heat = svgEl('g', { filter: 'url(#map-density-blur)' });
+        for (const n of map.nodes) { const [x, y] = pos.get(n.id); heat.append(svgEl('circle', { cx: x, cy: y, r: 10 + 26 * Math.sqrt(n.strength / Math.max(...map.nodes.map(m => m.strength))), fill: '#FE6E00', 'fill-opacity': .22 })); }
+        stage.append(heat);
+    } else {
+        const maxA = Math.max(...map.edges.map(e => e.association));
+        for (const e of map.edges) {
+            const [ax, ay] = pos.get(e.source), [bx, by] = pos.get(e.target), src = map.nodes.find(n => n.id === e.source);
+            const line = svgEl('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: color(src), 'stroke-opacity': .12 + .35 * e.association / maxA, 'stroke-width': .6 + 1.6 * e.association / maxA, 'data-a': e.source, 'data-b': e.target });
+            edgeLayer.append(line);
+        }
+    }
+    const neighbours = new Map(map.nodes.map(n => [n.id, new Set([n.id])]));
+    for (const e of map.edges) { neighbours.get(e.source).add(e.target); neighbours.get(e.target).add(e.source); }
+    const ranked = [...map.nodes].sort((a, b) => b.citations - a.citations), always = new Set(ranked.slice(0, 25).map(n => n.id));
+    const labels = new Map();
+    for (const n of map.nodes) {
+        const [x, y] = pos.get(n.id), r = radius(n), g = svgEl('g', { class: 'network-node', tabindex: 0, role: 'button', 'aria-label': `${n.label}: ${n.title}, ${n.citations} citations, cluster ${n.cluster || 'other'}`, 'data-id': n.id });
+        g.append(svgEl('circle', { cx: x, cy: y, r, fill: view === 'density' ? 'transparent' : color(n), stroke: view === 'density' ? 'none' : '#fff', 'stroke-width': 1 }));
+        g.append(svgEl('title', {}, `${n.label} · ${n.title}\n${integer.format(n.citations)} citations · ${n.links} links · cluster ${n.cluster || 'other'}`));
+        g.onclick = () => onClick?.(n);
+        g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(n); } };
+        g.onmouseenter = g.onfocus = () => focus(n.id); g.onmouseleave = g.onblur = () => focus(null);
+        nodeLayer.append(g);
+        const t = svgEl('text', { x, y: y + r + 9, 'text-anchor': 'middle', 'font-size': 9, fill: CHART.text, 'font-family': 'system-ui', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5 }, n.label);
+        labels.set(n.id, t); labelLayer.append(t);
+    }
+    stage.append(edgeLayer, nodeLayer, labelLayer); svg.append(stage);
+    let k = 1, tx = 0, ty = 0;
+    const apply = () => {
+        stage.setAttribute('transform', `translate(${tx} ${ty}) scale(${k})`);
+        for (const [id, t] of labels) { t.setAttribute('font-size', 9 / k); t.setAttribute('stroke-width', 2.5 / k); t.style.display = always.has(id) || radius(map.nodes.find(n => n.id === id)) * k > 9 ? '' : 'none'; }
+    };
+    function focus(id) {
+        const keep = id ? neighbours.get(id) : null;
+        for (const g of nodeLayer.children) g.style.opacity = !keep || keep.has(g.dataset.id) ? 1 : .15;
+        for (const l of edgeLayer.children) l.style.opacity = !keep || l.dataset.a === id || l.dataset.b === id ? '' : .05;
+        for (const [nid, t] of labels) t.style.visibility = !keep || keep.has(nid) ? '' : 'hidden';
+        if (id) labels.get(id).style.display = ''; else apply();
+    }
+    const point = e => { const b = svg.getBoundingClientRect(); return [(e.clientX - b.left) * W / b.width, (e.clientY - b.top) * H / b.height]; };
+    const zoomAt = (factor, [px, py]) => { const nk = Math.min(12, Math.max(.6, k * factor)); tx = px - (px - tx) * nk / k; ty = py - (py - ty) * nk / k; k = nk; apply(); };
+    svg.addEventListener('wheel', e => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * .0015), point(e)); }, { passive: false });
+    const pointers = new Map(); let last = null, pinch = null;
+    svg.addEventListener('pointerdown', e => { if (e.target.closest('.network-node')) return; svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId, point(e)); last = point(e); });
+    svg.addEventListener('pointermove', e => {
+        if (!pointers.has(e.pointerId)) return; pointers.set(e.pointerId, point(e));
+        if (pointers.size === 2) { const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch) zoomAt(d / pinch, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]); pinch = d; return; }
+        const now = point(e); tx += now[0] - last[0]; ty += now[1] - last[1]; last = now; apply();
+    });
+    const release = e => { pointers.delete(e.pointerId); pinch = null; last = pointers.size ? [...pointers.values()][0] : null; };
+    svg.addEventListener('pointerup', release); svg.addEventListener('pointercancel', release);
+    const tools = el('div', { class: 'map-tools' });
+    for (const [label, aria, fn] of [['+', 'Zoom in', () => zoomAt(1.4, [W / 2, H / 2])], ['−', 'Zoom out', () => zoomAt(1 / 1.4, [W / 2, H / 2])], ['Reset', 'Reset the view', () => { k = 1; tx = ty = 0; apply(); }]]) {
+        const b = el('button', { type: 'button', class: 'map-tool', 'aria-label': aria }, label); b.onclick = fn; tools.append(b);
+    }
+    p.body.append(tools, svg);
+    apply();
+    const legend = el('div', { class: 'map-legend' });
+    if (view === 'overlay') legend.append(el('span', { class: 'map-gradient' }), el('span', {}, `${yMin} or earlier → ${yMax} or later (publication year)`));
+    else for (const c of map.clusters) {
+        const item = el('span', { class: 'map-legend-item' }), dot = el('i'); dot.style.background = c.id ? clusterColor(c.id) : OTHER_CLUSTER;
+        item.append(dot, `${c.id ? `Cluster ${c.id}` : 'Other'}: ${c.topic_name || 'mixed topics'} (${c.size})`); legend.append(item);
+    }
+    p.body.append(legend);
+    exportControl(p);
+    if (files) { const b = el('button', { class: 'chart-export', type: 'button', 'aria-label': `Download VOSviewer files for ${p.title}` }, '↓ VOSviewer');
+        b.onclick = () => { downloadText(files.map, 'vosviewer-map.txt'); setTimeout(() => downloadText(files.network, 'vosviewer-network.txt'), 300); }; p.actions.append(b); }
+    accessible(p, ranked.map(n => ({ ...n, name: n.label, count: n.citations, description: `${n.label}, ${n.title}: ${integer.format(n.citations)} citations, cluster ${n.cluster || 'other'}` })), onClick);
+}
