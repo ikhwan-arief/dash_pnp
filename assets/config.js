@@ -6,5 +6,7 @@
 export const EXPORT_CONTROLS = false;
 // Set to true and rebuild to restore the Audit & methodology tab and its route.
 export const SHOW_AUDIT_TAB = false;
+// The Repositories tab stays in the source; set to true and rebuild to show it on the published site.
+export const SHOW_REPOSITORIES_TAB = false;
 // Best-effort browser restrictions; public metadata and source remain accessible.
 export const CONTENT_PROTECTION = true;

@@ -4,7 +4,7 @@
  * written permission from the copyright holder. See LICENSE and NOTICE. */
 import { MODULES, SDGS, METRIC_KINDS, INSTITUTION, configureInstitution, languageName, csvCell, metricDrill, journalWindow, snapshotYearOf, withoutPeriod, workSdgs, citingShard, CITING_FIELDS } from './metrics.js';
 import { renderImpactMetrics, renderJournalRecap, renderJournalHeader, renderAuthorHeader, renderJournalMetrics, renderJournalCitations, renderJournalTable, METRIC_TITLES, metricYear } from './journal-panel.js';
-import { EXPORT_CONTROLS, SHOW_AUDIT_TAB, CONTENT_PROTECTION } from './config.js';
+import { EXPORT_CONTROLS, SHOW_AUDIT_TAB, SHOW_REPOSITORIES_TAB, CONTENT_PROTECTION } from './config.js';
 import { el, panel, bar, line, donut, stacked, scatter, heatmap, treemap, network, scienceMap, dots, smallMultiples, countryBubbleMap, destroyCharts, downloadText, PALETTE, applyTheme } from './charts.js';
 import { vosviewerFiles } from './sciencemap.js';
 const $ = id => document.getElementById(id), nf = new Intl.NumberFormat('en-US'), df = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
@@ -34,7 +34,9 @@ function setInstitution() {
     if (theme.accent) for (const [i, name] of [[2, '--teal'], [3, '--blue'], [4, '--plum'], [5, '--sage']]) root.setProperty(name, PALETTE[i]);
     if (theme.primary) document.querySelector('meta[name="theme-color"]').setAttribute('content', theme.primary);
     for (const id of ['breadcrumb-name', 'footer-name']) $(id).textContent = name;
-    $('brand-name').textContent = short;
+    // The sidebar shows the full institution name; long names get a smaller type size.
+    $('brand-name').textContent = name;
+    $('brand-name').classList.toggle('long', name.length > 12);
     const mark = $('brand-mark'), logo = manifest.institution.logo || {};
     mark.replaceChildren();
     if (logo.on_dark) mark.append(el('img', { src: logo.on_dark, alt: '', width: '96', height: '44' }));
@@ -55,7 +57,7 @@ const pending = new Map(), overviewCache = new Map();
 // Scopes exist only when the snapshot has them: no publisher role means no "published" scope or Journals tab, no funder role no "funded" scope.
 const NEUTRAL_MODULES = new Set(['publications', 'oa', 'repositories']);
 const hasScope = scope => Boolean(manifest?.files.overviews[scope]);
-const moduleEnabled = id => (id !== 'audit' || SHOW_AUDIT_TAB) && (id !== 'journals' || hasScope('published'));
+const moduleEnabled = id => (id !== 'audit' || SHOW_AUDIT_TAB) && (id !== 'repositories' || SHOW_REPOSITORIES_TAB) && (id !== 'journals' || hasScope('published'));
 const defaultScope = module => NEUTRAL_MODULES.has(module) ? 'all' : module === 'journals' ? 'published' : module === 'funding' && hasScope('funded') ? 'funded' : 'affiliated';
 const defaultCorpus = module => NEUTRAL_MODULES.has(module) ? 'all' : 'core';
 const moduleDefaults = module => ({ ...manifest.default_filter, scope: defaultScope(module), corpus: defaultCorpus(module) });
