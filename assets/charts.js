@@ -440,10 +440,12 @@ export function scienceMap(p, map, { view = 'network', onClick, files } = {}) {
     const scale = Math.min((W - 2 * pad) / ((x1 - x0) || 1), (H - 2 * pad) / ((y1 - y0) || 1));
     const pos = new Map(map.nodes.map(n => [n.id, [pad + (n.x - x0) * scale + ((W - 2 * pad) - (x1 - x0) * scale) / 2, pad + (n.y - y0) * scale + ((H - 2 * pad) - (y1 - y0) * scale) / 2]]));
     // The overlay scale runs from the 5th to the 95th percentile year, so a few old works do not wash out the recent ones.
-    const years = map.nodes.map(n => n.year).filter(Boolean).sort((a, b) => a - b), [yMin, yMax] = [years[Math.floor(years.length * .05)], years[Math.ceil(years.length * .95) - 1]];
+    const years = map.nodes.map(n => n.year).filter(Boolean).sort((a, b) => a - b), [yMin, yMax] = [Math.floor(years[Math.floor(years.length * .05)]), Math.ceil(years[Math.ceil(years.length * .95) - 1])];
     const yearColor = y => y ? mix('#FFE0B2', '#7C2D12', yMax > yMin ? Math.min(1, Math.max(0, (y - yMin) / (yMax - yMin))) : 1) : OTHER_CLUSTER;
     const color = n => view === 'overlay' ? yearColor(n.year) : n.cluster ? clusterColor(n.cluster) : OTHER_CLUSTER;
-    const maxCites = Math.max(1, ...map.nodes.map(n => n.citations)), radius = n => 3 + 11 * Math.sqrt(n.citations / maxCites);
+    // Node size: citations for works, co-authored works for institutions (node.weight).
+    const coauthor = map.kind === 'coauthorship', maxWeight = Math.max(1, ...map.nodes.map(n => n.weight)), radius = n => 3 + 11 * Math.sqrt(n.weight / maxWeight);
+    const describe = n => coauthor ? `${n.label}: ${integer.format(n.works)} co-authored works, ${n.links} partners, cluster ${n.cluster || 'other'}` : `${n.label}, ${n.title}: ${integer.format(n.citations)} citations, cluster ${n.cluster || 'other'}`;
     const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': p.title, xmlns: NS, class: 'science-map-svg' });
     const stage = svgEl('g'), edgeLayer = svgEl('g'), nodeLayer = svgEl('g'), labelLayer = svgEl('g', { 'pointer-events': 'none' });
     if (view === 'density') {
@@ -462,17 +464,17 @@ export function scienceMap(p, map, { view = 'network', onClick, files } = {}) {
     }
     const neighbours = new Map(map.nodes.map(n => [n.id, new Set([n.id])]));
     for (const e of map.edges) { neighbours.get(e.source).add(e.target); neighbours.get(e.target).add(e.source); }
-    const ranked = [...map.nodes].sort((a, b) => b.citations - a.citations), always = new Set(ranked.slice(0, 25).map(n => n.id));
+    const ranked = [...map.nodes].sort((a, b) => b.weight - a.weight), always = new Set(ranked.slice(0, coauthor ? 12 : 25).map(n => n.id));
     const labels = new Map();
     for (const n of map.nodes) {
-        const [x, y] = pos.get(n.id), r = radius(n), g = svgEl('g', { class: 'network-node', tabindex: 0, role: 'button', 'aria-label': `${n.label}: ${n.title}, ${n.citations} citations, cluster ${n.cluster || 'other'}`, 'data-id': n.id });
+        const [x, y] = pos.get(n.id), r = radius(n), g = svgEl('g', { class: 'network-node', tabindex: 0, role: 'button', 'aria-label': describe(n), 'data-id': n.id });
         g.append(svgEl('circle', { cx: x, cy: y, r, fill: view === 'density' ? 'transparent' : color(n), stroke: view === 'density' ? 'none' : '#fff', 'stroke-width': 1 }));
-        g.append(svgEl('title', {}, `${n.label} · ${n.title}\n${integer.format(n.citations)} citations · ${n.links} links · cluster ${n.cluster || 'other'}`));
+        g.append(svgEl('title', {}, coauthor ? `${n.label}${n.country ? ` (${n.country})` : ''}\n${integer.format(n.works)} co-authored works · ${n.links} partners · cluster ${n.cluster || 'other'}` : `${n.label} · ${n.title}\n${integer.format(n.citations)} citations · ${n.links} links · cluster ${n.cluster || 'other'}`));
         g.onclick = () => onClick?.(n);
         g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(n); } };
         g.onmouseenter = g.onfocus = () => focus(n.id); g.onmouseleave = g.onblur = () => focus(null);
         nodeLayer.append(g);
-        const t = svgEl('text', { x, y: y + r + 9, 'text-anchor': 'middle', 'font-size': 9, fill: CHART.text, 'font-family': 'system-ui', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5 }, n.label);
+        const t = svgEl('text', { x, y: y + r + 9, 'text-anchor': 'middle', 'font-size': 9, fill: CHART.text, 'font-family': 'system-ui', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5 }, n.label.length > 34 ? n.label.slice(0, 32) + '…' : n.label);
         labels.set(n.id, t); labelLayer.append(t);
     }
     stage.append(edgeLayer, nodeLayer, labelLayer); svg.append(stage);
@@ -507,14 +509,14 @@ export function scienceMap(p, map, { view = 'network', onClick, files } = {}) {
     p.body.append(tools, svg);
     apply();
     const legend = el('div', { class: 'map-legend' });
-    if (view === 'overlay') legend.append(el('span', { class: 'map-gradient' }), el('span', {}, `${yMin} or earlier → ${yMax} or later (publication year)`));
+    if (view === 'overlay') legend.append(el('span', { class: 'map-gradient' }), el('span', {}, `${yMin} or earlier → ${yMax} or later (${coauthor ? 'average publication year of co-authored works' : 'publication year'})`));
     else for (const c of map.clusters) {
         const item = el('span', { class: 'map-legend-item' }), dot = el('i'); dot.style.background = c.id ? clusterColor(c.id) : OTHER_CLUSTER;
-        item.append(dot, `${c.id ? `Cluster ${c.id}` : 'Other'}: ${c.topic_name || 'mixed topics'} (${c.size})`); legend.append(item);
+        item.append(dot, `${c.id ? `Cluster ${c.id}` : 'Other'}: ${coauthor ? `${c.lead}${c.size > 1 ? ` and ${c.size - 1} more` : ''}${c.country_name ? ` · mostly ${c.country_name}` : ''}` : `${c.topic_name || 'mixed topics'} (${c.size})`}`); legend.append(item);
     }
     p.body.append(legend);
     exportControl(p);
     if (files) { const b = el('button', { class: 'chart-export', type: 'button', 'aria-label': `Download VOSviewer files for ${p.title}` }, '↓ VOSviewer');
-        b.onclick = () => { downloadText(files.map, 'vosviewer-map.txt'); setTimeout(() => downloadText(files.network, 'vosviewer-network.txt'), 300); }; p.actions.append(b); }
-    accessible(p, ranked.map(n => ({ ...n, name: n.label, count: n.citations, description: `${n.label}, ${n.title}: ${integer.format(n.citations)} citations, cluster ${n.cluster || 'other'}` })), onClick);
+        b.onclick = () => { const prefix = coauthor ? 'vosviewer-institutions' : 'vosviewer'; downloadText(files.map, `${prefix}-map.txt`); setTimeout(() => downloadText(files.network, `${prefix}-network.txt`), 300); }; p.actions.append(b); }
+    accessible(p, ranked.map(n => ({ ...n, name: n.label, count: n.weight, description: describe(n) })), onClick);
 }

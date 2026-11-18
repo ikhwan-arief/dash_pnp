@@ -109,16 +109,9 @@ export function vosLayout(n, edges, { iterations = 600, seed = 1 } = {}) {
     return Array.from({ length: n }, (_, i) => [(x[i] - cx) / mean, (y[i] - cy) / mean]);
 }
 
-// Full map: pick the most strongly linked works, normalise, cluster and lay out. label(work) and topicOf(work) come from the caller.
-export function buildScienceMap(works, kind, { pool = works, minCitations = 0, maxNodes = MAP_LIMITS.nodes, cocitationPairs = null, label = w => w.id } = {}) {
-    maxNodes = Math.max(10, Math.min(MAP_LIMITS.nodes, Number(maxNodes) || MAP_LIMITS.nodes));
-    const candidates = pool.filter(w => (w.citations || 0) >= Number(minCitations || 0)), byId = new Map(candidates.map(w => [w.id, w]));
-    const links = rawLinks(kind, works, new Set(byId.keys()), kind === 'cocitation' ? cocitationPairs : null);
-    const tls = new Map();
-    for (const [key, n] of links) for (const id of key.split('|')) tls.set(id, (tls.get(id) || 0) + n);
-    const chosen = [...tls.keys()].sort((a, b) => tls.get(b) - tls.get(a) || (byId.get(b).citations || 0) - (byId.get(a).citations || 0) || (a < b ? -1 : 1)).slice(0, maxNodes);
+// Shared core: keep the chosen nodes, map only the largest connected set (VOSviewer's default), normalise, cluster and lay out.
+function mapCore(chosen, links) {
     const keep = new Set(chosen), kept = new Map([...links].filter(([key]) => { const [a, b] = key.split('|'); return keep.has(a) && keep.has(b); }));
-    // As VOSviewer's default, only the largest set of connected works is mapped; separate small groups would only stretch the map.
     const adjacency = new Map();
     for (const key of kept.keys()) { const [a, b] = key.split('|'); for (const [u, v] of [[a, b], [b, a]]) { if (!adjacency.has(u)) adjacency.set(u, []); adjacency.get(u).push(v); } }
     let largest = new Set();
@@ -130,8 +123,8 @@ export function buildScienceMap(works, kind, { pool = works, minCitations = 0, m
     }
     for (const key of [...kept.keys()]) if (!largest.has(key.split('|')[0])) kept.delete(key);
     const ids = chosen.filter(id => largest.has(id)), index = new Map(ids.map((id, i) => [id, i]));
-    const stats = { kind, candidates: candidates.length, linked_works: tls.size, links: links.size, selected: [...adjacency.keys()].length, outside_largest_set: [...adjacency.keys()].length - ids.length };
-    if (ids.length < 2) return { kind, nodes: [], edges: [], clusters: [], stats };
+    const counts = { selected: adjacency.size, outside_largest_set: adjacency.size - ids.length };
+    if (ids.length < 2) return { ids: [], counts };
     const { strength } = associationStrength(kept);
     const edges = [...kept].map(([key, n]) => { const [a, b] = key.split('|'); return [index.get(a), index.get(b), strength.get(key), n]; });
     const raw = louvain(ids.length, edges.map(([i, j, s]) => [i, j, s]));
@@ -142,22 +135,62 @@ export function buildScienceMap(works, kind, { pool = works, minCitations = 0, m
     const xy = vosLayout(ids.length, edges.map(([i, j, s]) => [i, j, s]));
     const degree = new Map(), strengthOf = new Map();
     for (const [i, j, , n] of edges) for (const v of [i, j]) { degree.set(v, (degree.get(v) || 0) + 1); strengthOf.set(v, (strengthOf.get(v) || 0) + n); }
-    const nodes = ids.map((id, i) => { const w = byId.get(id); return { id, label: label(w), title: w.title, year: w.year || null, citations: w.citations || 0,
-        x: Math.round(xy[i][0] * 1e4) / 1e4, y: Math.round(xy[i][1] * 1e4) / 1e4, cluster: clusterOf[i], links: degree.get(i) || 0, strength: strengthOf.get(i) || 0, topic: w.topic || null }; });
-    const shown = edges.sort((a, b) => b[2] - a[2] || b[3] - a[3]).slice(0, MAP_LIMITS.edges).map(([i, j, s, n]) => ({ source: ids[i], target: ids[j], strength: n, association: s }));
-    const clusters = [...new Set(clusterOf)].sort((a, b) => a - b).map(c => {
-        const members = nodes.filter(n => n.cluster === c), topics = new Map();
-        for (const n of members) if (n.topic) topics.set(n.topic, (topics.get(n.topic) || 0) + 1);
-        const topic = [...topics].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]?.[0] || null;
-        return { id: c, size: members.length, topic, citations: members.reduce((s, n) => s + n.citations, 0) };
+    const shown = [...edges].sort((a, b) => b[2] - a[2] || b[3] - a[3]).slice(0, MAP_LIMITS.edges).map(([i, j, s, n]) => ({ source: ids[i], target: ids[j], strength: n, association: s }));
+    const place = (id, i) => ({ id, x: Math.round(xy[i][0] * 1e4) / 1e4, y: Math.round(xy[i][1] * 1e4) / 1e4, cluster: clusterOf[i], links: degree.get(i) || 0, strength: strengthOf.get(i) || 0 });
+    return { ids, place, shown, total_links: edges.length, counts };
+}
+// Most frequent value of a node property inside a cluster (ties: smallest value), used to name clusters.
+function clusterSummary(nodes, key) {
+    return [...new Set(nodes.map(n => n.cluster))].sort((a, b) => a - b).map(c => {
+        const members = nodes.filter(n => n.cluster === c), counts = new Map();
+        for (const n of members) if (n[key]) counts.set(n[key], (counts.get(n[key]) || 0) + 1);
+        const top = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]?.[0] || null;
+        const lead = [...members].sort((a, b) => (b.weight || 0) - (a.weight || 0) || (a.id < b.id ? -1 : 1))[0];
+        return { id: c, size: members.length, [key]: top, lead: lead?.label || null, citations: members.reduce((s, n) => s + (n.citations || 0), 0), weight: members.reduce((s, n) => s + (n.weight || 0), 0) };
     });
-    return { kind, nodes, edges: shown, clusters, stats: { ...stats, nodes: nodes.length, shown_links: shown.length, total_links: edges.length } };
+}
+
+// Citation map of works: pick the most strongly linked works, normalise, cluster and lay out. label(work) comes from the caller.
+export function buildScienceMap(works, kind, { pool = works, minCitations = 0, maxNodes = MAP_LIMITS.nodes, cocitationPairs = null, label = w => w.id } = {}) {
+    maxNodes = Math.max(10, Math.min(MAP_LIMITS.nodes, Number(maxNodes) || MAP_LIMITS.nodes));
+    const candidates = pool.filter(w => (w.citations || 0) >= Number(minCitations || 0)), byId = new Map(candidates.map(w => [w.id, w]));
+    const links = rawLinks(kind, works, new Set(byId.keys()), kind === 'cocitation' ? cocitationPairs : null);
+    const tls = new Map();
+    for (const [key, n] of links) for (const id of key.split('|')) tls.set(id, (tls.get(id) || 0) + n);
+    const chosen = [...tls.keys()].sort((a, b) => tls.get(b) - tls.get(a) || (byId.get(b).citations || 0) - (byId.get(a).citations || 0) || (a < b ? -1 : 1)).slice(0, maxNodes);
+    const core = mapCore(chosen, links), stats = { kind, candidates: candidates.length, linked_works: tls.size, links: links.size, ...core.counts };
+    if (!core.ids.length) return { kind, nodes: [], edges: [], clusters: [], stats };
+    const nodes = core.ids.map((id, i) => { const w = byId.get(id); return { ...core.place(id, i), label: label(w), title: w.title, year: w.year || null, citations: w.citations || 0, weight: w.citations || 0, topic: w.topic || null }; });
+    return { kind, nodes, edges: core.shown, clusters: clusterSummary(nodes, 'topic'), stats: { ...stats, nodes: nodes.length, shown_links: core.shown.length, total_links: core.total_links } };
+}
+
+// Co-authorship map of institutions (VOSviewer "co-authorship, organizations"): a link counts works shared by two institutions.
+// The home institution is on every work of an affiliated set, so it is left out unless includeHome is set.
+export function buildCollaborationMap(works, { institutionsOf, homeId = null, includeHome = false, minWorks = 1, maxNodes = MAP_LIMITS.nodes, nameOf = id => id, countryOf = () => null } = {}) {
+    maxNodes = Math.max(10, Math.min(MAP_LIMITS.nodes, Number(maxNodes) || MAP_LIMITS.nodes));
+    const count = new Map(), years = new Map(), cites = new Map(), lists = [];
+    for (const w of works) {
+        const ids = [...new Set(institutionsOf(w))].filter(id => includeHome || id !== homeId).sort();
+        for (const id of ids) { count.set(id, (count.get(id) || 0) + 1); cites.set(id, (cites.get(id) || 0) + (w.citations || 0)); if (w.year) { const y = years.get(id) || [0, 0]; years.set(id, [y[0] + w.year, y[1] + 1]); } }
+        lists.push(ids);
+    }
+    const eligible = new Set([...count].filter(([, n]) => n >= Number(minWorks || 1)).map(([id]) => id)), links = new Map();
+    // Works with very many institutions (large consortia) would add hundreds of weak pairs; VOSviewer offers the same cap.
+    for (const ids of lists) { const list = ids.filter(id => eligible.has(id)); if (list.length > 25) continue; for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) add(links, list[i], list[j]); }
+    const tls = new Map();
+    for (const [key, n] of links) for (const id of key.split('|')) tls.set(id, (tls.get(id) || 0) + n);
+    const chosen = [...tls.keys()].sort((a, b) => tls.get(b) - tls.get(a) || count.get(b) - count.get(a) || (a < b ? -1 : 1)).slice(0, maxNodes);
+    const core = mapCore(chosen, links), stats = { kind: 'coauthorship', candidates: eligible.size, linked_works: tls.size, links: links.size, ...core.counts };
+    if (!core.ids.length) return { kind: 'coauthorship', nodes: [], edges: [], clusters: [], stats };
+    const nodes = core.ids.map((id, i) => { const y = years.get(id); return { ...core.place(id, i), label: nameOf(id), title: nameOf(id), year: y ? Math.round(y[0] / y[1] * 10) / 10 : null,
+        weight: count.get(id), works: count.get(id), citations: cites.get(id) || 0, country: countryOf(id), home: id === homeId }; });
+    return { kind: 'coauthorship', nodes, edges: core.shown, clusters: clusterSummary(nodes, 'country'), stats: { ...stats, nodes: nodes.length, shown_links: core.shown.length, total_links: core.total_links } };
 }
 
 // VOSviewer map and network files (tab-separated, numeric ids), readable by VOSviewer's "Create map based on network data".
 export function vosviewerFiles(map) {
     const num = new Map(map.nodes.map((n, i) => [n.id, i + 1])), clean = s => String(s ?? '').replace(/[\t\r\n"]+/g, ' ').trim();
-    const header = 'id\tlabel\tdescription\turl\tx\ty\tcluster\tweight<Links>\tweight<Total link strength>\tweight<Citations>\tscore<Pub. year>';
-    const rows = map.nodes.map(n => [num.get(n.id), clean(n.label), clean(n.title), `https://openalex.org/${n.id}`, n.x, n.y, n.cluster || '', n.links, n.strength, n.citations, n.year ?? ''].join('\t'));
+    const works = map.kind === 'coauthorship', header = `id\tlabel\tdescription\turl\tx\ty\tcluster\tweight<Links>\tweight<Total link strength>\tweight<${works ? 'Documents' : 'Citations'}>\tscore<${works ? 'Avg. pub. year' : 'Pub. year'}>`;
+    const rows = map.nodes.map(n => [num.get(n.id), clean(n.label), clean(n.title), `https://openalex.org/${n.id}`, n.x, n.y, n.cluster || '', n.links, n.strength, works ? n.works : n.citations, n.year ?? ''].join('\t'));
     return { map: [header, ...rows].join('\n') + '\n', network: map.edges.map(e => `${num.get(e.source)}\t${num.get(e.target)}\t${e.strength}`).join('\n') + '\n' };
 }

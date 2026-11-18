@@ -3,7 +3,8 @@
  * (https://polyformproject.org/licenses/noncommercial/1.0.0). Commercial use requires prior
  * written permission from the copyright holder. See LICENSE and NOTICE. */
 import { summarize, publicationPage, entityPage, filteredWorks, journalWindow, snapshotYearOf, configureInstitution } from './metrics.js';
-import { buildScienceMap } from './sciencemap.js';
+import { buildScienceMap, buildCollaborationMap } from './sciencemap.js';
+import { institutionIDs } from './metrics.js';
 let works = [], entities = {}, manifest, history = [], loadedKey = '', cocitation;
 async function getJSON(url) {
     const response = await fetch(url);
@@ -60,6 +61,13 @@ async function handle({ data }) {
             result = buildScienceMap(works, options.kind, { pool: filteredWorks(works, filter, entities, snapshotYear), minCitations: options.minCitations,
                 maxNodes: options.maxNodes, cocitationPairs: cocitation, label: w => `${surname(w.authors[0])} (${w.year ?? 'n.d.'})` });
             for (const c of result.clusters) c.topic_name = entities.topics[c.topic]?.name || null;
+        }
+        else if (action === 'collabmap') {
+            const region = new Intl.DisplayNames(['en'], { type: 'region' });
+            result = buildCollaborationMap(filteredWorks(works, filter, entities, snapshotYear), { institutionsOf: institutionIDs, homeId: manifest.institution.id,
+                includeHome: Boolean(options.includeHome), minWorks: options.minWorks, maxNodes: options.maxNodes,
+                nameOf: id => entities.institutions[id]?.name || id, countryOf: id => entities.institutions[id]?.country || null });
+            for (const c of result.clusters) { try { c.country_name = c.country ? region.of(c.country) : null; } catch { c.country_name = c.country; } }
         }
         else if (action === 'export')
             result = filteredWorks(works, filter, entities, snapshotYear).map(w => options.format==='json'?{
