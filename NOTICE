@@ -1,4 +1,4 @@
-Research publication dashboard (OpenAlex)
+Research publication dashboard
 Copyright (c) 2026 Ikhwan Arief (ikhwan[at]eng.unand.ac.id). All rights reserved.
 
 Required Notice: Copyright (c) 2026 Ikhwan Arief (ikhwan[at]eng.unand.ac.id)
@@ -29,7 +29,7 @@ The following parts are not covered by the license above and keep their own term
   next to it.
 - World map geometry derived from Natural Earth (world-map.json, world-map-lite.json): public
   domain.
-- Publication metadata (the data files): from OpenAlex, CC0 1.0. Rights to the works it
+- Publication metadata (the data files): open bibliographic metadata, CC0 1.0. Rights to the works it
   describes belong to their respective holders.
 - Institution logos: the property of the institution, used under the license stated in the
   logo attribution below or recorded with the logo file.

@@ -11,7 +11,7 @@ const pct = n => n === null || n === undefined ? 'Not available' : ratio(n) + '%
 const home = () => INSTITUTION.short_name;
 export const METRIC_TITLES = { four_year: '4-year citation ratio', two_year: '2-year citation ratio', fwci: 'FWCI' };
 const period = (from, to) => from === to ? String(from) : `${from}–${to}`;
-const provenance = 'Computed from OpenAlex metadata and citation links at the snapshot date. The result is a dashboard indicator, not an official value from another index provider. Index coverage, document classification and the assigned publication year can affect the result.';
+const provenance = 'Computed from open bibliographic metadata and citation links at the snapshot date. The result is a dashboard indicator, not an official value from another index provider. Index coverage, document classification and the assigned publication year can affect the result.';
 const updated = value => new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: INSTITUTION.timezone, timeZoneName: 'short' }).format(new Date(value));
 function link(label, href) { return el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label); }
 
@@ -35,8 +35,7 @@ function formulaHelp(container, kind, populationText) {
             link('Formula methodology ↗', 'https://clarivate.libguides.com/jcr/basics'));
     }
     details.append(el('p', {}, provenance), el('p', {}, `${populationText} Each work counts once per ID. Self-citations are included and retraction flags are kept. Valid high values are not capped. Unrecognised types are not forced into article/review.`),
-        el('p', {}, 'Years without a citation entry count as zero only within the supported history. The timeline is limited so every window falls within the ten-year coverage. Historical values can change after metadata updates.'),
-        link('Annual citation documentation ↗', 'https://help.openalex.org/data/works/attributes/'));
+        el('p', {}, 'Years without a citation entry count as zero only within the supported history. The timeline is limited so every window falls within the ten-year coverage. Historical values can change after metadata updates.'));
     container.append(details);
 }
 function drillButton(label, kind, part, year, onDrill) {
@@ -103,10 +102,9 @@ function fwciCard(row2, rows, year, ctx) {
     if (row?.window_incomplete) card.append(el('p', { class: 'journal-small-base' }, `The citation window ${year}–${year + 3} is not complete at the snapshot date. The score can change.`));
     const help = el('details', { class: 'fwci-help' });
     help.append(el('summary', {}, 'What FWCI means and how it is measured'),
-        el('p', {}, 'FWCI (Field-Weighted Citation Impact) per work = citations received ÷ citations expected for works with the same year, type and subfield. The window covers the publication year and the three following years. Per-work scores come from OpenAlex; the dashboard does not recompute the global benchmark.'),
+        el('p', {}, 'FWCI (Field-Weighted Citation Impact) per work = citations received ÷ citations expected for works with the same year, type and subfield. The window covers the publication year and the three following years. Per-work scores come from the source metadata; the dashboard does not recompute the global benchmark.'),
         el('p', {}, `${title} here is the mean of valid FWCI scores of works in the selected publication year (${ctx.populationLabel}). Coverage = works with a valid FWCI ÷ all works in that year × 100%. It is not total citations divided by total expected citations.`),
-        el('p', {}, 'A benchmark of 1 is the global mean; 2 is twice that and 0.5 half. Consider metadata coverage and the number of works when reading the result.'),
-        link('OpenAlex FWCI method ↗', 'https://help.openalex.org/data/works/citations/'));
+        el('p', {}, 'A benchmark of 1 is the global mean; 2 is twice that and 0.5 half. Consider metadata coverage and the number of works when reading the result.'));
     card.append(help);
     if (row?.denominator) card.append(drillButton('Explore works with a valid FWCI', 'fwci', 'denominator', year, ctx.onDrill));
     container.append(card);
@@ -185,9 +183,8 @@ export function renderJournalRecap(container, dataset, filter, onYear) {
         if (kind === 'fwci') {
             const help = el('details', { class: 'fwci-help' });
             help.append(el('summary', {}, 'What FWCI means and how it is measured'),
-                el('p', {}, 'FWCI per work = citations received ÷ citations expected for works with the same year, type and subfield, over the publication year and the three following years. Per-work scores come from OpenAlex.'),
-                el('p', {}, 'Journal FWCI = mean of the valid scores of a journal\'s works in the selected publication year. The across-journal mean averages those values; pooled averages every work score with the metric across all journals.'),
-                link('OpenAlex FWCI method ↗', 'https://help.openalex.org/data/works/citations/'));
+                el('p', {}, 'FWCI per work = citations received ÷ citations expected for works with the same year, type and subfield, over the publication year and the three following years. Per-work scores come from the source metadata.'),
+                el('p', {}, 'Journal FWCI = mean of the valid scores of a journal\'s works in the selected publication year. The across-journal mean averages those values; pooled averages every work score with the metric across all journals.'));
             card.append(help);
         } else formulaHelp(card, kind, 'Works are mapped to a journal through their primary source; every affiliation and the full collected corpus are included.');
         cards.append(card);
@@ -213,7 +210,7 @@ export function renderJournalHeader(container, dataset, journal, onBack) {
     container.append(header);
     return header;
 }
-// Author profile header: identity, roles on the works in this dashboard, and OpenAlex career figures kept apart.
+// Author profile header: identity, roles on the works in this dashboard, and career figures kept apart.
 export function renderAuthorHeader(container, author, home, onBack) {
     // The page title already shows the author's name, so the header starts with identity links.
     const header = el('section', { class: 'journal-page-head author-page-head', 'data-author-page': author.id }), back = el('button', { class: 'button secondary', type: 'button' }, `← All ${home} authors`);
@@ -226,15 +223,14 @@ export function renderAuthorHeader(container, author, home, onBack) {
     const career = el('dl', { class: 'journal-counts author-facts' }), c = author.career;
     const value = n => n === null || n === undefined ? 'Not available' : count(n);
     for (const [label, n] of [['Works', c.works], ['Citations', c.citations], ['h-index', c.h_index], ['i10-index', c.i10_index]]) career.append(el('dt', {}, label), el('dd', {}, value(n)));
-    const identity = el('p', { class: 'panel-note' }, `OpenAlex author ${author.id}`);
+    const identity = el('p', { class: 'panel-note' }, 'Author profile');
     if (author.orcid) identity.append(document.createTextNode(' · '), link('ORCID ↗', author.orcid));
-    identity.append(document.createTextNode(' · '), link('OpenAlex profile ↗', 'https://openalex.org/' + author.id));
     const grid = el('div', { class: 'author-head-grid' }), left = el('div'), right = el('div');
     left.append(el('h3', {}, 'In this dashboard'), facts);
-    right.append(el('h3', {}, 'OpenAlex career, all affiliations'), career);
+    right.append(el('h3', {}, 'Career, all affiliations'), career);
     grid.append(left, right);
     header.append(back, identity, grid,
-        el('p', { class: 'panel-note' }, `KPIs, charts and the list below cover every work in this dashboard that lists this author, including works in ${home} journals under another affiliation; filters narrow them. Career figures come from the author's OpenAlex profile and include work outside this dashboard. Author identities come from OpenAlex disambiguation and can be imperfect; this is not an official performance assessment.`));
+        el('p', { class: 'panel-note' }, `KPIs, charts and the list below cover every work in this dashboard that lists this author, including works in ${home} journals under another affiliation; filters narrow them. Career figures come from the author's source profile and include work outside this dashboard. Author identities come from the source metadata disambiguation and can be imperfect; this is not an official performance assessment.`));
     container.append(header);
     return header;
 }
@@ -253,7 +249,7 @@ export function renderJournalCitations(container, dataset, journal, filter, onYe
     const history = journal.citations;
     if (!history) return;
     const year = metricYear(dataset.years, dataset.defaults.year, filter), window = history.three_year.find(r => r.year === year);
-    const p = panel(container, 'Citations per year', `Citations received by all works of ${journal.name} in each citation year (OpenAlex counts_by_year, ${history.by_year[0].year}–${history.by_year.at(-1).year}). ${dataset.snapshot_year}* is not complete. Click a year to choose the three-year window ending in that year.`);
+    const p = panel(container, 'Citations per year', `Citations received by all works of ${journal.name} in each citation year (annual citation counts, ${history.by_year[0].year}–${history.by_year.at(-1).year}). ${dataset.snapshot_year}* is not complete. Click a year to choose the three-year window ending in that year.`);
     p.node.dataset.journalCitations = '';
     p.node.classList.add('journal-citations');
     const selectable = new Set(dataset.years);

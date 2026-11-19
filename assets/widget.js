@@ -17,20 +17,20 @@
         windows: (p, c, prov) => `Publications ${p} · citations ${c}${prov ? ' · provisional, year not complete' : ''}`, smallBase: 'Small base (fewer than 30 documents).',
         fwciNote: y => `Mean FWCI of works published in ${y}; global benchmark 1`, fwciCover: (n, t, c) => `${n} of ${t} works have a valid FWCI · coverage ${c}`,
         fwciWindow: (a, b) => `Citation window ${a}–${b} is not complete yet.`, fwciSmall: 'Small base (fewer than 30 works with a score).',
-        fwciDef: 'Work FWCI = citations received ÷ citations expected for the same year, type and subfield (OpenAlex).', fwciDash: 'Dashed line: global FWCI benchmark 1',
+        fwciDef: 'Work FWCI = citations received ÷ citations expected for the same year, type and subfield (source metadata).', fwciDash: 'Dashed line: global FWCI benchmark 1',
         perYear: 'Citations per year', citationsLabel: 'Citations', totalWorks: n => `total ${n} works`, perYearNote: y => `Citations received by all journal works per citation year; ${y}* is not complete`, citations: ' citations', worksUnit: ' works',
         total: s => `Total citations ${s}`, totalRecent: s => `Total citations ${s} to works published ${s}`, recentNote: (n, s) => `The second figure only counts citations to the ${n} works published in ${s}.`,
         output: 'Journal output by year', outputNote: 'Number of works by publication year', of: (a, b) => `${a} of ${b} works`,
-        yes: 'yes', no: 'no', apc: v => `List APC US$ ${v}`, updated: d => `OpenAlex data, updated ${d}.`,
+        yes: 'yes', no: 'no', apc: v => `List APC US$ ${v}`, updated: d => `Data updated ${d}.`,
         kpis: [['Publications', 'Unique works'], ['Cumulative citations', 'As of the snapshot date'], ['Open access', 'Free to read'], ['International collaboration', 'More than one country'], ['Mean FWCI', (n, c) => `${n} works · ${c}`], ['Top 10% works', n => `Of ${n} works with a score`]],
         impact: 'Journal citation impact', types: 'Work types by year', access: 'Access status by year', accessNote: 'Share of works per OA status',
         countries: 'Contributor countries', countriesNote: 'A work can count for several countries', origin: 'Author affiliation',
         originNote: h => `Works with at least one ${h} author versus works without a ${h} affiliation`, home: h => `With ${h} affiliation`, external: h => `Without ${h} affiliation`,
         articles: 'Most cited articles', columns: ['Title', 'Year', 'Citations', 'Access', 'SDG'],
-        sdgCard: 'SDGs of journal works', sdgNote: 'Unique works per goal; a work can count for several goals. Automatic OpenAlex classification, not a measure of impact.', score: 'classifier confidence', noSdg: 'No SDG labels on this journal\'s works yet.', country: 'Country', moreGoals: n => `${n} more goals are listed in the values table.`, mapLoading: 'Loading map…', noCountries: 'No affiliation countries on this journal\'s works yet.',
+        sdgCard: 'SDGs of journal works', sdgNote: 'Unique works per goal; a work can count for several goals. Automatic classification, not a measure of impact.', score: 'classifier confidence', noSdg: 'No SDG labels on this journal\'s works yet.', country: 'Country', moreGoals: n => `${n} more goals are listed in the values table.`, mapLoading: 'Loading map…', noCountries: 'No affiliation countries on this journal\'s works yet.',
         mapMissing: list => `Not on the map: ${list}.`, mapNote: 'Bubble size is proportional to the number of works; hover or tap to see values',
         sdgNames: ['No poverty', 'Zero hunger', 'Good health and well-being', 'Quality education', 'Gender equality', 'Clean water and sanitation', 'Affordable and clean energy', 'Decent work and economic growth', 'Industry, innovation and infrastructure', 'Reduced inequalities', 'Sustainable cities and communities', 'Responsible consumption and production', 'Climate action', 'Life below water', 'Life on land', 'Peace, justice and strong institutions', 'Partnerships for the goals'],
-        footer: n => `Top ${n} works by citations. Indicators are computed from OpenAlex metadata (CC0); they are not official values of any index provider.` };
+        footer: n => `Top ${n} works by citations. Indicators are computed from open bibliographic metadata (CC0); they are not official values of any index provider.` };
     const nf = new Intl.NumberFormat(S.locale), df = new Intl.NumberFormat(S.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const num = v => v === null || v === undefined ? '—' : nf.format(v), dec = v => v === null || v === undefined ? S.na : df.format(v);
     const pct = v => v === null || v === undefined ? '—' : df.format(v) + '%';
@@ -300,7 +300,7 @@
     async function mountWidget(mount) {
         // IDs are accepted in any case and with surrounding spaces, e.g. "s4210184296".
         const id = (mount.getAttribute('data-journal-metrics') || '').trim().toUpperCase();
-        if (!/^S\d{1,15}$/.test(id) || mount.dataset.uamReady) return;
+        if (!/^S[0-9a-z]{1,15}$/.test(id) || mount.dataset.uamReady) return;
         mount.dataset.uamReady = '1';
         mount.style.setProperty('--uam-accent', accent(mount));
         mount.textContent = S.loading;

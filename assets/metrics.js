@@ -37,7 +37,8 @@ export function workSdgs(work) {
 export const BINS = [[0, 0, '0 citations'], [1, 5, '1–5'], [6, 10, '6–10'], [11, 50, '11–50'], [51, 100, '51–100'], [101, Infinity, '>100']];
 // Citing works are stored in shards keyed by the cited work, so build and browser locate them the same way.
 export const CITING_SHARDS = 256, CITING_OWN_FILE = 1000;
-export const citingShard = id => Number(String(id).replace(/^W/, '')) % CITING_SHARDS;
+// Shard of a cited work: FNV-1a hash of its public code, the same in the build and in the browser.
+export const citingShard = id => { let h = 0x811c9dc5; for (const c of String(id)) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0; return h % CITING_SHARDS; };
 // Compact citing-work rows: [id, doi, title, year, date, type, source, authors, author_count, oa, url].
 export const CITING_FIELDS = ['id', 'doi', 'title', 'year', 'date', 'type', 'source', 'authors', 'author_count', 'oa', 'url'];
 // 'all' is the union of the institution's scopes; audit candidates are never part of it.
@@ -215,14 +216,14 @@ export function journalWidgetData(journal, works, entities, manifest, dataset) {
         sdgs: summary.top.sdgs.filter(r => /^(?:[1-9]|1[0-7])$/.test(r.id)).map(r => [Number(r.id), r.count]),
         sdg_policy: { classifier: manifest.sdg?.classifier || 'unknown', scores: Boolean(manifest.sdg?.scores) } };
 }
-// Language codes from OpenAlex (ISO 639-1, e.g. "id") shown as English names ("Indonesian"); the code stays the filter ID.
+// Language codes from the source metadata (ISO 639-1, e.g. "id") shown as English names ("Indonesian"); the code stays the filter ID.
 const LANGUAGES = (() => { try { return new Intl.DisplayNames(['en'], { type: 'language' }); } catch { return null; } })();
 export function languageName(code) {
     if (!code || code === 'unknown') return 'Unknown';
     if (!/^[a-z]{2,3}$/i.test(code)) return code;
     try { const name = LANGUAGES?.of(code); return name && name !== code ? name : code; } catch { return code; }
 }
-// One author's identity (OpenAlex profile, all affiliations) and roles on the given works.
+// One author's identity (source profile, all affiliations) and roles on the given works.
 // eligible: the author has an affiliated authorship anywhere in the snapshot (all works), whatever the active filter.
 export function authorProfile(works, entities, id, everything = works) {
     const entity = entities.authors[id] || {}, own = works.map(w => w.authors.filter(a => a.id === id)).filter(list => list.length);
@@ -433,7 +434,7 @@ export function normalizedPublicationGrowth(works, yearRows, filter, currentYear
         small_base_years: rows.filter(row => row.status === 'small_base').length, raw_rows: raw } };
 }
 export const FWCI_POLICY = Object.freeze({ version: 1, min_works: 30, date_policy_version: GROWTH_POLICY.version,
-    benchmark: 1, source: 'https://help.openalex.org/data/works/citations/' });
+    benchmark: 1, source: null });
 export function normalizedAnnualFWCI(works, yearRows, filter, currentYear) {
     const excluded = { invalid_year: 0, before_institution: 0, future_year: 0, epoch_date: 0 }, byYear = new Map();
     let missing = 0, invalid = 0;

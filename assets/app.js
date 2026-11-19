@@ -255,11 +255,10 @@ function fwciHelp(container, { open = false, work = false, timeline = false } = 
     details.open = open;
     details.append(el('summary', {}, 'What FWCI means and how it is measured'),
         el('p', {}, 'FWCI (Field-Weighted Citation Impact) measures the citation impact of a work while accounting for its field, year and publication type.'),
-        el('p', {}, 'FWCI per work = citations received ÷ expected citations. The benchmark is the mean citation count of OpenAlex works with the same year, type and subfield. The window covers the publication year and the three following years; cumulative citation counts may use a different span.'),
+        el('p', {}, 'FWCI per work = citations received ÷ expected citations. The benchmark is the mean citation count of works with the same year, type and subfield. The window covers the publication year and the three following years; cumulative citation counts may use a different span.'),
         el('p', {}, 'FWCI 1 = the global benchmark mean; 2 = twice that; 0.5 = half. The most recent years have an incomplete citation window.'));
     if (!work) details.append(el('p', {}, `Dashboard mean FWCI = sum of valid FWCI scores ÷ number of works with a valid FWCI in the filter and group shown. FWCI coverage = works with the metric ÷ all works${timeline ? ' with an eligible date in that year' : ' in the same group'} × 100%. Zero values count; missing values are not treated as 0.`));
-    details.append(el('p', {}, 'Per-work scores come from OpenAlex; the dashboard does not recompute the global benchmark. This is a work metric, not a journal score.'),
-        external('OpenAlex FWCI method ↗', 'https://help.openalex.org/data/works/citations/'));
+    details.append(el('p', {}, 'Per-work scores come from the source metadata; the dashboard does not recompute the global benchmark. This is a work metric, not a journal score.'));
     container.append(details);
 }
 function intro(container, text) { container.append(el('div', { class: 'module-intro' }, text)); }
@@ -541,7 +540,7 @@ function render() {
         fwciTimeline(grid);
         const p = panel(grid, 'Publications over time', 'Unique works by publication year.');
         line(p, data.top.years, { onClick: drillYear });
-        const q = panel(grid, 'Work types', 'Document types follow the OpenAlex normalisation.');
+        const q = panel(grid, 'Work types', 'Document types follow the source normalisation.');
         stacked(q, groupedYears('types'), data.top.types.slice(0, 6), { onClick: (y, s) => drill({ from: y.year, to: y.year, type: s.id }) });
         treemap(panel(grid, 'Research field landscape', 'One main field per work; click a field to explore.'), data.top.fields, r => drill({ field: r.id }));
         groupBar(grid, 'Top partner institutions', 'partners', 'partner', 'One work can involve several partners.');
@@ -560,7 +559,7 @@ function render() {
     else if (author) {
         // Two per row, every chart on this author's works only; clicks narrow this page.
         line(panel(grid, 'Publications over time', 'The author\'s works by publication year. Click a year to narrow this page.'), data.top.years, { onClick: drillYear });
-        line(panel(grid, 'Citations by year received', 'Citations to the author\'s works in each year (OpenAlex counts_by_year); the available window is limited.'), data.citation_years.map(([year, count]) => ({ year, count })), { label: 'Citations', unit: 'citations' });
+        line(panel(grid, 'Citations by year received', 'Citations to the author\'s works in each year (annual citation counts); the available window is limited.'), data.citation_years.map(([year, count]) => ({ year, count })), { label: 'Citations', unit: 'citations' });
         stacked(panel(grid, 'Work types by year', 'Minor types may fall outside the top six series.'), groupedYears('types'), data.top.types.slice(0, 6), { onClick: (y, s) => drill({ from: y.year, to: y.year, type: s.id }) });
         bar(panel(grid, 'Citation distribution', 'Number of works per citation range. Click a range to see its works.'), data.histogram, { horizontal: false, onClick: r => drill({ bin: r.id }) });
         groupBar(grid, 'Top publication sources', 'sources', 'source');
@@ -587,7 +586,7 @@ function render() {
         smallMultiples(panel(grid, 'Author activity across years', `Line charts for the top 10 authors by works affiliated with ${home()}. Each author's range starts and ends at their publication years within the selected chart range; gaps in between stay at zero. The vertical scale is shared; horizontal ranges may differ. Click a point to open that author's profile for the year.`, true), data.top.authors, years(), (r, y) => openAuthor(r.id, { from: y, to: y }), { individual: true });
         minis(content, [['Authors observed', num(k.authors), 'Profiles based on publications'], ['With ORCID', num(data.coverage.orcid_authors), 'Of the observed author profiles'], [`${home()} first authors`, num(k.first), 'Per work; same authorship element'], [`${home()} corresponding`, num(k.corresponding), 'Corresponding data is not guaranteed complete']]);
         entityTable(content, 'authors');
-        intro(content,`${num(data.quality.author_id)} works have authorships without an OpenAlex author ID. Their available names, affiliations and positions are still shown; these authorships are not merged into one author profile or counted as new staff.`);
+        intro(content,`${num(data.quality.author_id)} works have authorships without an author ID. Their available names, affiliations and positions are still shown; these authorships are not merged into one author profile or counted as new staff.`);
     }
     else if (currentModule === 'citations') {
         fwciTimeline(grid);
@@ -600,7 +599,7 @@ function render() {
         for (const [v, l] of [['coupling', 'Bibliographic coupling'], ['direct', 'Direct citation'], ['cocitation', 'Co-citation']]) option(kind, v, l);
         const minimum = el('input', { type: 'number', min: 0, max: 500, value: 0, 'aria-label': 'Minimum citations' });
         mapPanel(grid, filter.scope === 'affiliated' ? `Links between ${home()} works` : 'Links between the selected works',
-            'Map of the most strongly linked works: association-strength normalisation, VOS layout and modularity clusters. Links are observed references in OpenAlex.',
+            'Map of the most strongly linked works: association-strength normalisation, VOS layout and modularity clusters. Links are observed references in the source metadata.',
             'sciencemap', [kind, ['Min. citations', minimum]], () => ({ kind: kind.value, minCitations: Number(minimum.value) || 0 }), 'works', r => openWork(r.id));
         minis(content, [['Median citations', decimal(k.median_citations), 'Little affected by outliers'], ['Scope h-index', num(k.h_index), 'Only the active set of works'], ['Mean citations', decimal(data.total ? k.citations / data.total : null), 'Cumulative citations per work'], ['FWCI coverage', pct(k.fwci_coverage), 'Missing values are left out of the mean']]);
     }
@@ -646,11 +645,11 @@ function render() {
         donut(panel(grid, 'Open access routes', 'OA status at the snapshot date.'), data.top.oa, r => drill({ oa: r.id === 'unknown' ? '' : r.id }));
         stacked(panel(grid, 'OA composition over time', 'Share of each category per year; the denominator is all works of that year.'), data.oa_years.map(y => ({ ...y, values: y.oa })), data.top.oa, { percentage: true, onClick: (y, s) => drill({ from: y.year, to: y.year, oa: s.id }) });
         const statuses = data.top.oa.map(r => r.id), rows = data.top.fields.slice(0, 8).map(r => ({ ...r, years: Object.fromEntries(statuses.map(s => [s, data.oa_fields.find(x => x.field === r.id && x.oa === s)?.count || 0])) }));
-        heatmap(panel(grid, 'Fields and access routes', 'Number of works; categories follow the OpenAlex status.', true), rows, statuses, (r, s) => drill({ field: r.id, oa: s }));
+        heatmap(panel(grid, 'Fields and access routes', 'Number of works; categories follow the source status.', true), rows, statuses, (r, s) => drill({ field: r.id, oa: s }));
         minis(content, [['Any repository copy', num(data.coverage.any_repo), 'At least one repository holds a copy'], ['License known', num(data.coverage.license), 'At least one licensed copy'], ['PDF available', num(data.coverage.pdf), 'Content service metadata'], ['Open works', pct(k.oa), 'Does not by itself grant reuse rights']]);
     }
     else if (currentModule === 'funding') {
-        intro(content, hasScope('funded') ? `Use the Scope option to tell all works funded by ${home()} apart from the funders of works affiliated with ${home()}. Missing funding metadata does not mean the research was unfunded.` : `OpenAlex lists no funder record for ${home()}, so this tab shows the funders recorded on works in the active scope. Missing funding metadata does not mean the research was unfunded.`);
+        intro(content, hasScope('funded') ? `Use the Scope option to tell all works funded by ${home()} apart from the funders of works affiliated with ${home()}. Missing funding metadata does not mean the research was unfunded.` : `The source metadata lists no funder record for ${home()}, so this tab shows the funders recorded on works in the active scope. Missing funding metadata does not mean the research was unfunded.`);
         groupBar(grid, 'Recorded funders', 'funders', 'funder');
         smallMultiples(panel(grid, 'Funding by year', 'Line charts for the 10 funders with the most publications in the active scope. Years that are zero for every funder shown are hidden, so the axis years may not be consecutive. Source data stays intact. The vertical scale is shared; one work can have several funders.', true), data.top.funders, years(), (r, y) => drill({ funder: r.id, from: y, to: y }), { omitEmpty: true });
         network(panel(grid, 'Funders and research topics', 'Links show a funder and a topic on the same work.', true), data.networks.funding, r => drill(r.id.startsWith('F') ? { funder: r.id } : { topic: r.id }));
@@ -709,7 +708,7 @@ function render() {
 // SDG card shared by journal and author pages: top 8 goals in the chart, the rest named in the note.
 function sdgCard(grid, title) {
     const goals = data.top.sdgs.filter(r => r.count > 0), others = goals.slice(8);
-    bar(panel(grid, title, `Unique works per goal; one work can belong to several goals. Automatic OpenAlex classification, not a measure of impact.${others.length ? ` Other goals: ${others.map(r => `SDG ${r.id} (${num(r.count)})`).join(', ')}.` : ''} Click a goal to narrow this page.`),
+    bar(panel(grid, title, `Unique works per goal; one work can belong to several goals. Automatic classification, not a measure of impact.${others.length ? ` Other goals: ${others.map(r => `SDG ${r.id} (${num(r.count)})`).join(', ')}.` : ''} Click a goal to narrow this page.`),
         goals, { limit: 8, onClick: r => drill({ sdg: r.id }) });
 }
 function timelineTrack(p, label) {
@@ -831,7 +830,6 @@ function fwciTimeline(grid) {
     for (const row of normalization.raw_rows.filter(row => row.count > 0)) raw.append(el('li', {}, `${row.year}: raw mean ${decimal(row.fwci)} FWCI · ${num(row.fwci_n)} of ${num(row.count)} works · coverage ${pct(row.coverage)}`));
     details.append(raw);
     p.node.append(details, el('p', { class: 'panel-note' }));
-    p.node.lastElementChild.append(external('OpenAlex FWCI definition and calculation ↗', normalization.policy.source));
 }
 function annualFWCITable(container, rows) {
     const section = el('section', { class: 'panel table-panel annual-fwci' });
@@ -953,7 +951,7 @@ function methodPanel(grid) {
         if (title === 'Normalised metrics') fwciHelp(box);
         p.body.append(box);
     }
-    p.node.append(el('p', { class: 'panel-note' }, `Snapshot ${manifest.updated_at}. ${manifest.authorships_refreshed_at?'Authorship metadata rechecked '+formatDate(manifest.authorships_refreshed_at)+'. ':''}OpenAlex metadata is CC0; document rights follow their original licenses. Networks are limited to 40 nodes and 150 links. Source: help.openalex.org.`));
+    p.node.append(el('p', { class: 'panel-note' }, `Snapshot ${manifest.updated_at}. ${manifest.authorships_refreshed_at?'Authorship metadata rechecked '+formatDate(manifest.authorships_refreshed_at)+'. ':''}open bibliographic metadata is CC0; document rights follow their original licenses. Networks are limited to 40 nodes and 150 links.`));
 }
 // Shared work detail: tabs "Details" and "Citing works" for every module that opens a work.
 let detailToken = 0;
@@ -988,8 +986,8 @@ function sdgSection(w) {
         }
         box.append(list);
     }
-    const classifier = policy.classifier === 'openalex-2026-10' ? 'OpenAlex classifier (since October 2026)' : 'classifier version not recorded';
-    box.append(el('p', { class: 'panel-note' }, `Source: OpenAlex, field ${policy.field || 'sustainable_development_goals'} · ${classifier}${policy.threshold ? ` · score threshold ${decimal(policy.threshold)}` : ''} · retrieved ${formatDate(policy.retrieved_at || manifest.updated_at)}${policy.scores === false || !w.sdg_scores ? ' · scores not stored in this snapshot' : ''}.`),
+    const classifier = policy.classifier === 'v2026-10' ? 'classifier version of October 2026' : 'classifier version not recorded';
+    box.append(el('p', { class: 'panel-note' }, `Automatic SDG classification · ${classifier}${policy.threshold ? ` · score threshold ${decimal(policy.threshold)}` : ''} · retrieved ${formatDate(policy.retrieved_at || manifest.updated_at)}${policy.scores === false || !w.sdg_scores ? ' · scores not stored in this snapshot' : ''}.`),
         el('p', { class: 'panel-note' }, 'Automatic classification from text metadata; not an assessment or verification of real impact on the SDGs. The score is the classifier\'s confidence, not a probability or a measure of contribution. A work can have zero, one or several goals.'));
     return box;
 }
@@ -1018,14 +1016,14 @@ async function loadCiting(w, panel, tab, token) {
 }
 function renderCiting(panel, w, result) {
     const rows = result.rows, counts = el('div', { class: 'detail-grid' });
-    for (const [label, value] of [['Cumulative citations (OpenAlex)', num(w.citations)], ['Citing works identified', num(rows.length)], ['Relation source', 'OpenAlex']]) { const c = el('div'); c.append(el('small', {}, label), el('span', {}, value)); counts.append(c); }
+    for (const [label, value] of [['Cumulative citations', num(w.citations)], ['Citing works identified', num(rows.length)], ['Relation source', 'Reference lists']]) { const c = el('div'); c.append(el('small', {}, label), el('span', {}, value)); counts.append(c); }
     const status = result.status === 'stale' ? 'Citing data from the previous retrieval because the latest refresh failed' : result.status === 'sample' ? 'Test sample, not complete' : 'Complete for this snapshot';
-    panel.replaceChildren(counts, el('p', { class: 'panel-note' }, `${status} · retrieved ${result.retrieved_at ? formatDate(result.retrieved_at) : 'date not recorded'}. A relation is recorded only when the citing work's reference list in OpenAlex contains this work. The number of citing works can differ from cumulative citations because of retrieval timing and reference matching. The publication year of a citing work is not the citation year in the Citations per year chart.`));
+    panel.replaceChildren(counts, el('p', { class: 'panel-note' }, `${status} · retrieved ${result.retrieved_at ? formatDate(result.retrieved_at) : 'date not recorded'}. A relation is recorded only when the citing work's reference list in the source metadata contains this work. The number of citing works can differ from cumulative citations because of retrieval timing and reference matching. The publication year of a citing work is not the citation year in the Citations per year chart.`));
     // Distinguish "no citations", "not in the local sample" and "cited but no citing work proven by a reference list".
     if (!rows.length) {
         const message = !w.citations ? 'This work has no citations in the current data.'
-            : result.status === 'sample' ? `OpenAlex records ${num(w.citations)} citations for this work, but it is not in the citing-data test sample. The full list is available after a full retrieval.`
-            : `OpenAlex records ${num(w.citations)} citations, but this retrieval found no citing work that can be proven through its reference list.`;
+            : result.status === 'sample' ? `The source metadata records ${num(w.citations)} citations for this work, but it is not in the citing-data test sample. The full list is available after a full retrieval.`
+            : `The source metadata records ${num(w.citations)} citations, but this retrieval found no citing work that can be proven through its reference list.`;
         panel.append(el('p', {}, message));
         return;
     }
@@ -1049,7 +1047,7 @@ function renderCiting(panel, w, result) {
             const link = safeURL(r.url) ? external('Open ↗', r.url) : safeURL(r.doi) ? external('DOI ↗', r.doi) : el('span', {}, 'Not available');
             const tr = el('tr', { 'data-citing-id': r.id });
             tr.append(el('td', { class: 'num' }, r.year ?? '—'), el('td', {}, r.title || 'Title not available'), el('td', {}, r.source || 'Not available'),
-                el('td', {}, authors), el('td', {}, r.type || 'Not available'), el('td', {}, 'OpenAlex'));
+                el('td', {}, authors), el('td', {}, r.type || 'Not available'), el('td', {}, 'Reference list'));
             // el() takes text only, so the link element is appended to its cell.
             const cell = el('td'); cell.append(link); tr.append(cell);
             body.append(tr);
@@ -1123,7 +1121,7 @@ async function openWork(id) {
         if (w.apc_list || w.apc_paid)
             panel.append(el('p', {}, `List APC: ${w.apc_list?.value_usd === undefined ? 'Not available' : 'US$ ' + decimal(w.apc_list.value_usd)}. Estimated payment: ${w.apc_paid?.value_usd === undefined ? 'Not available' : 'US$ ' + decimal(w.apc_paid.value_usd)}. Provenance: ${w.apc_paid?.provenance || 'Not available'}. Not actual ${home()} spending.`));
         const links = el('div', { class: 'detail-links' });
-        for (const [label, url] of [['OpenAlex ↗', 'https://openalex.org/' + w.id], ['DOI ↗', w.doi], ['Open copy ↗', w.oa_url]])
+        for (const [label, url] of [['DOI ↗', w.doi], ['Open copy ↗', w.oa_url]])
             if (safeURL(url)) {
                 const a = external(label, url);
                 a.classList.add('button', 'secondary');
@@ -1220,7 +1218,7 @@ async function exportData(type) {
     try {
         const rows = await task('export',{format:type});
         if (type === 'json')
-            downloadText(JSON.stringify({ metadata: { snapshot: manifest.updated_at, filter: exportFilter, source: 'OpenAlex', ror: manifest.institution.ror }, results: rows }, null, 2), `${fileSlug()}-publications.json`, 'application/json');
+            downloadText(JSON.stringify({ metadata: { snapshot: manifest.updated_at, filter: exportFilter, source: 'Open bibliographic metadata', ror: manifest.institution.ror }, results: rows }, null, 2), `${fileSlug()}-publications.json`, 'application/json');
         else {
             const keys = Object.keys(rows[0] || { id: '', title: '', retrieved_at: '' });
             downloadText('\uFEFF' + [keys, ...rows.map(r => keys.map(k => r[k]))].map(r => r.map(csvCell).join(',')).join('\r\n'), `${fileSlug()}-publications.csv`, 'text/csv;charset=utf-8');
@@ -1236,6 +1234,8 @@ async function exportData(type) {
 }
 async function init() {
     document.documentElement.dataset.exportControls = EXPORT_CONTROLS ? 'visible' : 'hidden';
+    // Pages cannot send frame-ancestors; a dashboard framed by another site is blanked to stop clickjacking and passing it off as theirs.
+    try { if (window.top !== window.self) { document.documentElement.replaceChildren(); return; } } catch { document.documentElement.replaceChildren(); return; }
     document.documentElement.dataset.contentProtection = CONTENT_PROTECTION ? 'enabled' : 'disabled';
     if (CONTENT_PROTECTION) {
         document.addEventListener('contextmenu', event => {

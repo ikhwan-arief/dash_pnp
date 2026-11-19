@@ -160,7 +160,7 @@ export function buildScienceMap(works, kind, { pool = works, minCitations = 0, m
     const chosen = [...tls.keys()].sort((a, b) => tls.get(b) - tls.get(a) || (byId.get(b).citations || 0) - (byId.get(a).citations || 0) || (a < b ? -1 : 1)).slice(0, maxNodes);
     const core = mapCore(chosen, links), stats = { kind, candidates: candidates.length, linked_works: tls.size, links: links.size, ...core.counts };
     if (!core.ids.length) return { kind, nodes: [], edges: [], clusters: [], stats };
-    const nodes = core.ids.map((id, i) => { const w = byId.get(id); return { ...core.place(id, i), label: label(w), title: w.title, year: w.year || null, citations: w.citations || 0, weight: w.citations || 0, topic: w.topic || null }; });
+    const nodes = core.ids.map((id, i) => { const w = byId.get(id); return { ...core.place(id, i), label: label(w), title: w.title, doi: w.doi || null, year: w.year || null, citations: w.citations || 0, weight: w.citations || 0, topic: w.topic || null }; });
     return { kind, nodes, edges: core.shown, clusters: clusterSummary(nodes, 'topic'), stats: { ...stats, nodes: nodes.length, shown_links: core.shown.length, total_links: core.total_links } };
 }
 
@@ -191,6 +191,6 @@ export function buildCollaborationMap(works, { institutionsOf, homeId = null, in
 export function vosviewerFiles(map) {
     const num = new Map(map.nodes.map((n, i) => [n.id, i + 1])), clean = s => String(s ?? '').replace(/[\t\r\n"]+/g, ' ').trim();
     const works = map.kind === 'coauthorship', header = `id\tlabel\tdescription\turl\tx\ty\tcluster\tweight<Links>\tweight<Total link strength>\tweight<${works ? 'Documents' : 'Citations'}>\tscore<${works ? 'Avg. pub. year' : 'Pub. year'}>`;
-    const rows = map.nodes.map(n => [num.get(n.id), clean(n.label), clean(n.title), `https://openalex.org/${n.id}`, n.x, n.y, n.cluster || '', n.links, n.strength, works ? n.works : n.citations, n.year ?? ''].join('\t'));
+    const rows = map.nodes.map(n => [num.get(n.id), clean(n.label), clean(n.title), n.doi || '', n.x, n.y, n.cluster || '', n.links, n.strength, works ? n.works : n.citations, n.year ?? ''].join('\t'));
     return { map: [header, ...rows].join('\n') + '\n', network: map.edges.map(e => `${num.get(e.source)}\t${num.get(e.target)}\t${e.strength}`).join('\n') + '\n' };
 }
