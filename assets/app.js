@@ -5,7 +5,7 @@
 import { MODULES, SDGS, METRIC_KINDS, INSTITUTION, configureInstitution, languageName, csvCell, metricDrill, journalWindow, snapshotYearOf, withoutPeriod, workSdgs, citingShard, CITING_FIELDS } from './metrics.js';
 import { renderImpactMetrics, renderJournalRecap, renderJournalHeader, renderAuthorHeader, renderJournalMetrics, renderJournalCitations, renderJournalTable, METRIC_TITLES, metricYear } from './journal-panel.js';
 import { EXPORT_CONTROLS, SHOW_AUDIT_TAB, SHOW_REPOSITORIES_TAB, CONTENT_PROTECTION } from './config.js';
-import { el, panel, bar, line, donut, stacked, scatter, heatmap, treemap, network, scienceMap, dots, smallMultiples, countryBubbleMap, destroyCharts, downloadText, PALETTE, applyTheme } from './charts.js';
+import { el, panel, bar, line, donut, stacked, scatter, heatmap, treemap, network, scienceMap, fundingFlow, dots, smallMultiples, countryBubbleMap, destroyCharts, downloadText, PALETTE, applyTheme } from './charts.js';
 import { vosviewerFiles } from './sciencemap.js';
 const $ = id => document.getElementById(id), nf = new Intl.NumberFormat('en-US'), df = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const num = n => n === null || n === undefined ? 'Not available' : nf.format(n);
@@ -652,7 +652,22 @@ function render() {
         intro(content, hasScope('funded') ? `Use the Scope option to tell all works funded by ${home()} apart from the funders of works affiliated with ${home()}. Missing funding metadata does not mean the research was unfunded.` : `The source metadata lists no funder record for ${home()}, so this tab shows the funders recorded on works in the active scope. Missing funding metadata does not mean the research was unfunded.`);
         groupBar(grid, 'Recorded funders', 'funders', 'funder');
         smallMultiples(panel(grid, 'Funding by year', 'Line charts for the 10 funders with the most publications in the active scope. Years that are zero for every funder shown are hidden, so the axis years may not be consecutive. Source data stays intact. The vertical scale is shared; one work can have several funders.', true), data.top.funders, years(), (r, y) => drill({ funder: r.id, from: y, to: y }), { omitEmpty: true });
-        network(panel(grid, 'Funders and research topics', 'Links show a funder and a topic on the same work.', true), data.networks.funding, r => drill(r.id.startsWith('F') ? { funder: r.id } : { topic: r.id }));
+        // Funding flows: Sankey (or heatmap) from the top funders to fields or topics; click opens the works behind a band, a cell or a node.
+        const flowPanel = panel(grid, 'Funders and research topics', 'Band width = works with both the funder and the field (or topic). A work with several funders counts once for each. Only works with funder metadata appear; missing funding metadata does not mean the research was unfunded.', true);
+        const flowBy = el('select', { 'aria-label': 'Right side' }), flowView = el('select', { 'aria-label': 'Funding view' }), flowBar = el('div', { class: 'map-controls' });
+        for (const [v, l] of [['field', 'By field'], ['topic', 'By topic']]) option(flowBy, v, l);
+        for (const [v, l] of [['sankey', 'Sankey'], ['heatmap', 'Heatmap']]) option(flowView, v, l);
+        flowBar.append(flowBy, flowView); flowPanel.actions.append(flowBar);
+        let flowRequest = 0, flow = null;
+        const flowRender = () => {
+            flowPanel.actions.querySelectorAll('.chart-export').forEach(b => b.remove()); flowPanel.node.querySelector('.chart-data')?.remove();
+            fundingFlow(flowPanel, flow, { view: flowView.value, onClick: ({ funder, target }) => drill({ ...(funder ? { funder } : {}), ...(target && target !== 'unknown' ? { [flow.by]: target } : {}) }) });
+            if (flow.funded) flowPanel.body.append(el('p', { class: 'map-note' }, `${num(flow.funded)} of ${num(flow.total)} works in the filter (${pct(flow.total ? flow.funded / flow.total * 100 : 0)}) record at least one funder; ${num(flow.funders)} funders in all. The top ${flow.sources.filter(s => s.id !== 'other').length} are shown separately.`));
+        };
+        const flowDraw = async () => { const mine = ++flowRequest; flowPanel.body.replaceChildren(el('div', { class: 'empty-state' }, 'Calculating…'));
+            const result = await task('fundingflow', { by: flowBy.value }); if (mine !== flowRequest) return; flow = result; flowRender(); };
+        flowBy.onchange = flowDraw; flowView.onchange = () => flow && flowRender();
+        flowDraw();
         minis(content, [['Works with a funder', num(data.total - data.quality.funder), 'Funding metadata completeness'], ['Awards identified', num(data.top.awards.length), 'At most 50 in the summary'], ['List APC known', num(k.apc_n), 'List price, not institutional spending'], ['OpenAPC payments', num(k.paid_verified), 'Articles with OpenAPC provenance']]);
         intro(content, `Mean known list APC: ${k.apc_mean === null ? 'Not available' : 'US$ ' + decimal(k.apc_mean)}. ${num(k.paid_fallback)} estimated payment records use provenance other than OpenAPC. These are not summed as actual ${home()} spending.`);
         entityTable(content, 'funders');

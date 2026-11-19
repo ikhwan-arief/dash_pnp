@@ -1986,3 +1986,42 @@ thead th {
   color:var(--muted);
   margin:6px 0 0
 }
+.chart-body.funding-flow {
+  height:auto
+}
+.chart-body.funding-flow svg.flow-svg {
+  width:100%;
+  height:auto;
+  overflow:visible
+}
+.flow-band {
+  cursor:pointer;
+  transition:fill-opacity .15s cubic-bezier(.4,0,.2,1)
+}
+.flow-band:hover,.flow-band:focus-visible {
+  fill-opacity:.7
+}
+.flow-matrix-wrap {
+  overflow:auto
+}
+.flow-matrix {
+  font-size:11px
+}
+.flow-matrix thead th {
+  white-space:normal;
+  min-width:72px;
+  vertical-align:bottom
+}
+.flow-matrix tbody th {
+  font-weight:500;
+  white-space:normal;
+  min-width:180px
+}
+.flow-cell {
+  width:100%;
+  min-height:28px;
+  border:0;
+  border-radius:4px;
+  color:var(--ink);
+  font-weight:600
+}

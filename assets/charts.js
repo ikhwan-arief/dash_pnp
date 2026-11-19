@@ -520,3 +520,65 @@ export function scienceMap(p, map, { view = 'network', onClick, files } = {}) {
         b.onclick = () => { const prefix = coauthor ? 'vosviewer-institutions' : 'vosviewer'; downloadText(files.map, `${prefix}-map.txt`); setTimeout(() => downloadText(files.network, `${prefix}-network.txt`), 300); }; p.actions.append(b); }
     accessible(p, ranked.map(n => ({ ...n, name: n.label, count: n.weight, description: describe(n) })), onClick);
 }
+// Funding flows (funder → field or topic). Sankey: band width = works; heatmap: the same counts as a matrix.
+// onClick receives { funder, target } (either may be null for a whole node).
+export function fundingFlow(p, flow, { view = 'sankey', onClick } = {}) {
+    p.body.replaceChildren();
+    if (!flow.links.length) { empty(p, 'No works with recorded funders in this selection.'); return; }
+    p.body.classList.add('funding-flow');
+    const color = new Map(flow.sources.map((s, i) => [s.id, s.id === 'other' ? OTHER_CLUSTER : clusterColor(i + 1)]));
+    const short = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+    const click = (funder, target) => onClick?.({ funder: funder === 'other' ? null : funder, target: target === 'other' ? null : target });
+    if (view === 'heatmap') {
+        const max = Math.max(...flow.links.map(l => l.count)), cell = new Map(flow.links.map(l => [`${l.source}|${l.target}`, l.count]));
+        const wrap = el('div', { class: 'flow-matrix-wrap' }), table = el('table', { class: 'flow-matrix' }), head = el('tr');
+        head.append(el('th', { scope: 'col' }, 'Funder'));
+        for (const t of flow.targets) head.append(el('th', { scope: 'col', title: t.name }, short(t.name, 22)));
+        const body = el('tbody');
+        for (const s of flow.sources) {
+            const row = el('tr'); row.append(el('th', { scope: 'row', title: s.name }, short(s.name, 40)));
+            for (const t of flow.targets) {
+                const n = cell.get(`${s.id}|${t.id}`) || 0, td = el('td', { class: 'num' });
+                if (n) { const b = el('button', { type: 'button', class: 'flow-cell', 'aria-label': `${s.name} and ${t.name}: ${n} works`, title: `${s.name} → ${t.name}: ${n} works` }, String(n));
+                    b.style.background = `color-mix(in srgb, var(--forest) ${Math.round(12 + 78 * n / max)}%, #fff)`; if (n / max > .5) b.style.color = '#fff'; b.onclick = () => click(s.id, t.id); td.append(b); }
+                row.append(td);
+            }
+            body.append(row);
+        }
+        table.append(el('thead', {}), body); table.firstChild.append(head); wrap.append(table); p.body.append(wrap);
+    } else {
+        const W = 800, gap = 6, rows = Math.max(flow.sources.length, flow.targets.length), H = Math.max(320, rows * 30), x0 = 250, x1 = 550, bar = 12;
+        const scale = (H - gap * (rows - 1)) / Math.max(flow.links.reduce((s, l) => s + l.count, 0), 1);
+        const lay = (nodes, side) => { let y = 0; const totals = new Map(); for (const l of flow.links) totals.set(l[side], (totals.get(l[side]) || 0) + l.count);
+            return new Map(nodes.map(n => { const h = Math.max(2, totals.get(n.id) * scale), pos = { y, h, used: 0 }; y += h + gap; return [n.id, pos]; })); };
+        const L = lay(flow.sources, 'source'), R = lay(flow.targets, 'target');
+        const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': p.title, xmlns: NS, class: 'flow-svg' }), bands = svgEl('g'), nodes = svgEl('g');
+        const order = [...flow.links].sort((a, b) => flow.sources.findIndex(s => s.id === a.source) - flow.sources.findIndex(s => s.id === b.source) || flow.targets.findIndex(t => t.id === a.target) - flow.targets.findIndex(t => t.id === b.target));
+        const rOrder = [...flow.links].sort((a, b) => flow.targets.findIndex(t => t.id === a.target) - flow.targets.findIndex(t => t.id === b.target) || flow.sources.findIndex(s => s.id === a.source) - flow.sources.findIndex(s => s.id === b.source));
+        const rY = new Map(); for (const l of rOrder) { const r = R.get(l.target); rY.set(l, r.y + r.used); r.used += l.count * scale; }
+        for (const l of order) {
+            const a = L.get(l.source), h = l.count * scale, ya = a.y + a.used, yb = rY.get(l); a.used += h;
+            const mid = (x0 + bar + x1) / 2, d = `M${x0 + bar},${ya}C${mid},${ya} ${mid},${yb} ${x1},${yb}L${x1},${yb + h}C${mid},${yb + h} ${mid},${ya + h} ${x0 + bar},${ya + h}Z`;
+            const s = flow.sources.find(n => n.id === l.source), t = flow.targets.find(n => n.id === l.target);
+            const path = svgEl('path', { d, fill: color.get(l.source), 'fill-opacity': .42, class: 'flow-band', tabindex: 0, role: 'button', 'aria-label': `${s.name} to ${t.name}: ${l.count} works`, 'data-s': l.source, 'data-t': l.target });
+            path.append(svgEl('title', {}, `${s.name} → ${t.name}\n${integer.format(l.count)} works`));
+            path.onclick = () => click(l.source, l.target); path.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(l.source, l.target); } };
+            bands.append(path);
+        }
+        const focus = (side, id) => { for (const b of bands.children) b.setAttribute('fill-opacity', !id || b.dataset[side] === id ? .55 : .08); };
+        const node = (n, pos, x, side) => {
+            const g = svgEl('g', { class: 'network-node', tabindex: 0, role: 'button', 'aria-label': `${n.name}: ${n.count} funded works` });
+            g.append(svgEl('rect', { x, y: pos.y, width: bar, height: pos.h, rx: 2, fill: side === 's' ? color.get(n.id) : CHART.primary }));
+            const left = side === 's', label = svgEl('text', { x: left ? x - 8 : x + bar + 8, y: pos.y + pos.h / 2 + 3, 'text-anchor': left ? 'end' : 'start', 'font-size': 10, fill: CHART.text, 'font-family': 'system-ui' }, `${short(n.name, 34)} (${integer.format(n.count)})`);
+            g.append(label, svgEl('title', {}, `${n.name}: ${integer.format(n.count)} funded works`));
+            g.onmouseenter = g.onfocus = () => focus(side, n.id); g.onmouseleave = g.onblur = () => focus(side, null);
+            g.onclick = () => left ? click(n.id, null) : click(null, n.id);
+            g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); g.onclick(); } };
+            nodes.append(g);
+        };
+        flow.sources.forEach(n => node(n, L.get(n.id), x0, 's')); flow.targets.forEach(n => node(n, R.get(n.id), x1, 't'));
+        svg.append(bands, nodes); p.body.append(svg);
+        exportControl(p);
+    }
+    accessible(p, flow.links.map(l => ({ name: `${flow.sources.find(s => s.id === l.source).name} → ${flow.targets.find(t => t.id === l.target).name}`, count: l.count, funder: l.source, target: l.target })), r => click(r.funder, r.target));
+}

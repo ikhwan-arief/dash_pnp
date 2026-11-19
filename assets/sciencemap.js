@@ -194,3 +194,30 @@ export function vosviewerFiles(map) {
     const rows = map.nodes.map(n => [num.get(n.id), clean(n.label), clean(n.title), n.doi || '', n.x, n.y, n.cluster || '', n.links, n.strength, works ? n.works : n.citations, n.year ?? ''].join('\t'));
     return { map: [header, ...rows].join('\n') + '\n', network: map.edges.map(e => `${num.get(e.source)}\t${num.get(e.target)}\t${e.strength}`).join('\n') + '\n' };
 }
+
+// Funding flows: works per (funder → field or topic). A work with several funders counts once for each of them;
+// funders after the top ones are grouped as "Other funders", targets after the top ones as "Other".
+export const FLOW_LIMITS = { funders: 10, fields: 12, topics: 12 };
+export function buildFundingFlow(works, { by = 'field', topFunders = FLOW_LIMITS.funders, topTargets, funderName = id => id, targetName = id => id } = {}) {
+    topTargets ??= by === 'topic' ? FLOW_LIMITS.topics : FLOW_LIMITS.fields;
+    const funded = works.filter(w => w.funders?.length), target = w => (by === 'topic' ? w.topic : w.field) || 'unknown';
+    const funderCount = new Map(), targetCount = new Map();
+    for (const w of funded) { for (const f of new Set(w.funders)) funderCount.set(f, (funderCount.get(f) || 0) + 1); targetCount.set(target(w), (targetCount.get(target(w)) || 0) + 1); }
+    const rank = map => [...map].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([id]) => id);
+    const keepF = new Set(rank(funderCount).slice(0, topFunders)), keepT = new Set(rank(targetCount).slice(0, topTargets));
+    const left = id => keepF.has(id) ? id : 'other', right = id => keepT.has(id) ? id : 'other';
+    const links = new Map(), lCount = new Map(), rCount = new Map();
+    for (const w of funded) {
+        const t = right(target(w));
+        rCount.set(t, (rCount.get(t) || 0) + 1);
+        for (const f of new Set([...new Set(w.funders)].map(left))) {
+            lCount.set(f, (lCount.get(f) || 0) + 1);
+            const key = `${f}|${t}`; links.set(key, (links.get(key) || 0) + 1);
+        }
+    }
+    const order = (counts, keep) => [...rank(counts).filter(id => id !== 'other' && keep.has(id)), ...(counts.has('other') ? ['other'] : [])];
+    const sources = order(lCount, keepF).map(id => ({ id, name: id === 'other' ? 'Other funders' : funderName(id), count: lCount.get(id) }));
+    const targets = order(rCount, keepT).map(id => ({ id, name: id === 'other' ? 'Other' : id === 'unknown' ? 'Not classified' : targetName(id), count: rCount.get(id) }));
+    return { by, sources, targets, links: [...links].map(([key, count]) => { const [source, target] = key.split('|'); return { source, target, count }; }).sort((a, b) => b.count - a.count),
+        funded: funded.length, total: works.length, funders: funderCount.size };
+}

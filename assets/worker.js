@@ -3,7 +3,7 @@
  * (https://polyformproject.org/licenses/noncommercial/1.0.0). Commercial use requires prior
  * written permission from the copyright holder. See LICENSE and NOTICE. */
 import { summarize, publicationPage, entityPage, filteredWorks, journalWindow, snapshotYearOf, configureInstitution } from './metrics.js';
-import { buildScienceMap, buildCollaborationMap } from './sciencemap.js';
+import { buildScienceMap, buildCollaborationMap, buildFundingFlow } from './sciencemap.js';
 import { institutionIDs } from './metrics.js';
 let works = [], entities = {}, manifest, history = [], loadedKey = '', cocitation;
 async function getJSON(url) {
@@ -68,6 +68,11 @@ async function handle({ data }) {
                 includeHome: Boolean(options.includeHome), minWorks: options.minWorks, maxNodes: options.maxNodes,
                 nameOf: id => entities.institutions[id]?.name || id, countryOf: id => entities.institutions[id]?.country || null });
             for (const c of result.clusters) { try { c.country_name = c.country ? region.of(c.country) : null; } catch { c.country_name = c.country; } }
+        }
+        else if (action === 'fundingflow') {
+            const fieldNames = Object.fromEntries(Object.values(entities.topics).filter(t => t.field).map(t => [t.field, t.field_name || t.field]));
+            result = buildFundingFlow(filteredWorks(works, filter, entities, snapshotYear), { by: options.by === 'topic' ? 'topic' : 'field',
+                funderName: id => entities.funders[id]?.name || id, targetName: id => options.by === 'topic' ? entities.topics[id]?.name || id : fieldNames[id] || id });
         }
         else if (action === 'export')
             result = filteredWorks(works, filter, entities, snapshotYear).map(w => options.format==='json'?{
